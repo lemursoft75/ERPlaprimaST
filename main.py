@@ -51,7 +51,7 @@ elif selected == "🧾 Contabilidad":
     render_contabilidad()
 elif selected == "👥 Clientes":
     render_clientes()
-elif selected == "📳 Cobranza":
+elif selected == "💳 Cobranza":
     render_cobranza()
 elif selected == "📦 Productos":
     render_productos()
