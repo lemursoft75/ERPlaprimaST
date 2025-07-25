@@ -1,4 +1,3 @@
-# auth.py
 import streamlit as st
 import firebase_admin
 from firebase_admin import auth
@@ -16,13 +15,10 @@ def registrar_usuario(correo, contrasena):
 
 def iniciar_sesion(correo, contrasena):
     try:
-        # En producción, usar Firebase REST API para autenticar y obtener un token
-        # Aquí, solo se simula con sesión local por simplicidad
         st.session_state.usuario = correo
         st.success("✅ Inicio de sesión exitoso")
         st.success("Inicio de sesión exitoso. Redirigiendo...")
-        st.rerun()  # 👈 Cambiado de st.experimental_rerun() a st.rerun()
-
+        st.rerun()
     except Exception as e:
         st.error(f"❌ Error al iniciar sesión: {e}")
 
@@ -39,6 +35,14 @@ def recuperar_contrasena(correo):
         st.error(f"❌ Error al enviar recuperación: {e}")
 
 def mostrar_login():
+    # 🔷 TÍTULO y SUBTÍTULO
+    st.markdown("""
+        <div style='text-align: center; margin-bottom: 2rem;'>
+            <h1 style='color: #2C3E50;'>💼 MiNegocio Pro</h1>
+            <h4 style='color: #7F8C8D;'>- By Xibalbá Business -</h4>
+        </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("### 🔐 Iniciar sesión o Registrarse")
     opcion = st.radio("Selecciona una opción", ["Iniciar sesión", "Registrar nuevo", "Recuperar contraseña"])
 

@@ -240,19 +240,19 @@ def render():
             current_credito_disponible = float(current_limite_credito) - float(current_credito_usado)
 
             # --- DEBUG: Mostrar valores clave al momento del SUBMIT ---
-            st.subheader("DEBUG: Valores al momento del Submit")
-            st.write(f"submitted_fecha: {submitted_fecha}")
-            st.write(f"submitted_cliente: {submitted_cliente}")
-            st.write(f"submitted_producto: {submitted_producto}")
-            st.write(f"submitted_cantidad: {submitted_cantidad}")
-            st.write(f"submitted_precio (recalculado): {submitted_precio}")
-            st.write(f"submitted_total_original (recalculado): {submitted_total_original}")
-            st.write(f"anticipo_final_aplicado (del session_state): {anticipo_final_aplicado}")
-            st.write(f"submitted_total_ajustado (recalculado): {submitted_total_ajustado}")
-            st.write(f"submitted_monto_contado (del form): {submitted_monto_contado}")
-            st.write(f"monto_credito_f (recalculado): {monto_credito_f}")
-            st.write(f"current_existencia: {current_existencia}")
-            st.write(f"current_credito_disponible: {current_credito_disponible}")
+            # st.subheader("DEBUG: Valores al momento del Submit")
+            # st.write(f"submitted_fecha: {submitted_fecha}")
+            # st.write(f"submitted_cliente: {submitted_cliente}")
+            # st.write(f"submitted_producto: {submitted_producto}")
+            # st.write(f"submitted_cantidad: {submitted_cantidad}")
+            # st.write(f"submitted_precio (recalculado): {submitted_precio}")
+            # st.write(f"submitted_total_original (recalculado): {submitted_total_original}")
+            # st.write(f"anticipo_final_aplicado (del session_state): {anticipo_final_aplicado}")
+            # st.write(f"submitted_total_ajustado (recalculado): {submitted_total_ajustado}")
+            # st.write(f"submitted_monto_contado (del form): {submitted_monto_contado}")
+            # st.write(f"monto_credito_f (recalculado): {monto_credito_f}")
+            # st.write(f"current_existencia: {current_existencia}")
+            # st.write(f"current_credito_disponible: {current_credito_disponible}")
             # --- FIN DEBUG ---
 
             suma_componentes = submitted_monto_contado + monto_credito_f + anticipo_final_aplicado
@@ -260,13 +260,7 @@ def render():
             # Definir una pequeña tolerancia para la comparación de punto flotante
             epsilon = 0.01  # Tolerancia de un centavo
 
-            # --- DEBUG: Valores de validación del Desfase ---
-            st.subheader("DEBUG: Validación de Desfase")
-            st.write(f"Suma de componentes (contado+credito+anticipo): {suma_componentes:.2f}")
-            st.write(f"Total original de la venta (recalculado): {submitted_total_original:.2f}")
-            st.write(
-                f"Diferencia abs(suma - total_original): {abs(round(suma_componentes, 2) - round(submitted_total_original, 2)):.4f}")
-            # --- FIN DEBUG ---
+            diferencia = abs(round(suma_componentes, 2) - round(submitted_total_original, 2))
 
             # Validaciones finales
             if submitted_cantidad > current_existencia and current_existencia >= 0:

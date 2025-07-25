@@ -6,7 +6,6 @@ from utils.db import leer_ventas, guardar_transaccion, leer_transacciones, leer_
 
 
 
-
 # Función de callback para el selectbox de cliente
 def on_cliente_change():
     """Esta función se llama cuando el cliente en el selectbox cambia."""
@@ -86,7 +85,7 @@ def render():
     saldos_final = pd.merge(saldos_intermedio, anticipos_aplicados, on="Cliente", how="left").fillna(0)
 
     # Si 'Pagos y Aplicaciones' debe reflejar solo los abonos directos al crédito
-    saldos_final["Total Pagos y Aplicaciones"] = saldos_final["Pagos Cobranza"]
+    saldos_final["Total Pagos y Aplicaciones"] = saldos_final["Pagos Cobranza"] + saldos_final["Anticipos Aplicados"]
     saldos_final["Saldo Pendiente"] = saldos_final["Crédito Otorgado"] - saldos_final["Total Pagos y Aplicaciones"]
 
     # Añadir clientes que solo tienen anticipos (sin deuda actual)
