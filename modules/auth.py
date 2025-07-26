@@ -3,7 +3,6 @@ import firebase_admin
 from firebase_admin import auth
 import datetime
 
-
 def registrar_usuario(correo, contrasena):
     try:
         user = auth.create_user(
@@ -14,13 +13,11 @@ def registrar_usuario(correo, contrasena):
     except Exception as e:
         st.error(f"❌ Error al registrar usuario: {e}")
 
-
 def iniciar_sesion(correo, contrasena):
     try:
-        user = auth.get_user_by_email(correo)
         st.session_state.usuario = correo
-        st.session_state.uid = user.uid  # 🔐 UID del usuario actual
         st.success("✅ Inicio de sesión exitoso")
+        st.success("Inicio de sesión exitoso. Redirigiendo...")
         st.rerun()
     except Exception as e:
         st.error(f"❌ Error al iniciar sesión: {e}")
