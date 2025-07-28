@@ -1,6 +1,18 @@
 import streamlit as st
 import pandas as pd
+import datetime  # Importación necesaria para manejar fechas
+import io  # Importación necesaria para manejar datos en memoria para Excel
 from utils.db import leer_ventas, guardar_transaccion, leer_transacciones, leer_clientes
+
+
+# Helper function to convert DataFrame to Excel
+def to_excel(df):
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df.to_excel(writer, index=False, sheet_name='Datos')  # 'Datos' es el nombre de la hoja en Excel
+    writer.close()  # Importante cerrar el escritor para guardar el contenido
+    processed_data = output.getvalue()
+    return processed_data
 
 
 # Función de callback para el selectbox de cliente
@@ -16,12 +28,10 @@ def on_cliente_change():
     if "pago_anticipo_info" in st.session_state:
         del st.session_state["pago_anticipo_info"]
 
-    # --- CAMBIO CLAVE AQUÍ ---
     # Cuando el cliente cambia, queremos que el campo de monto a abonar se actualice
     # con el nuevo saldo pendiente. Reiniciamos la clave de session_state para el monto.
     if "cobranza_monto_input" in st.session_state:
         del st.session_state["cobranza_monto_input"]
-    # --- FIN CAMBIO CLAVE ---
 
     st.rerun()
 
@@ -67,11 +77,7 @@ def render():
         ].groupby("Cliente")["Monto"].sum().reset_index()
     pagos_cobranza.rename(columns={"Monto": "Pagos Cobranza"}, inplace=True)
 
-    # 3. NO NECESITAMOS sumar "Anticipos Aplicados" para el calculo del Saldo Pendiente de DEUDA.
-    #    Estos ya fueron "contabilizados" al registrar la venta con Monto Credito = 0.
-    #    Solo necesitamos los Anticipos Aplicados para el calculo del "Saldo Anticipos" (saldo a favor).
-
-    # 4. Calcular el total de anticipos DISPONIBLES (saldo a favor del cliente)
+    # 3. Calcular el total de anticipos DISPONIBLES (saldo a favor del cliente)
     # Esto es: Anticipos Cliente - Anticipos Aplicados
     anticipos_cliente_recibidos = transacciones_df[
         transacciones_df["Categoría"].astype(str) == "Anticipo Cliente"
@@ -79,7 +85,6 @@ def render():
     anticipos_cliente_recibidos.rename(columns={"Monto": "Anticipos Recibidos"}, inplace=True)
 
     # Necesitamos `anticipos_aplicados` para el cálculo del Saldo Anticipos
-    # Asegúrate de que `anticipos_aplicados` se siga calculando para este fin.
     anticipos_aplicados_para_saldo_anticipos = transacciones_df[
         transacciones_df["Categoría"].astype(str) == "Anticipo Aplicado"
         ].groupby("Cliente")["Monto"].sum().reset_index()
@@ -95,11 +100,10 @@ def render():
     saldos_final = pd.merge(credito_otorgado, pagos_cobranza, on="Cliente", how="left").fillna(0)
 
     # El "Total Pagos y Aplicaciones" para el calculo de deuda solo debe incluir Cobranza
-    saldos_final["Total Pagos y Aplicaciones"] = saldos_final["Pagos Cobranza"]  # <-- CAMBIO AQUI
+    saldos_final["Total Pagos y Aplicaciones"] = saldos_final["Pagos Cobranza"]
 
     # Calcular el Saldo Pendiente
     saldos_final["Saldo Pendiente"] = saldos_final["Crédito Otorgado"] - saldos_final["Total Pagos y Aplicaciones"]
-
 
     # Añadir clientes que solo tienen anticipos (sin deuda actual)
     # Identificar clientes que tienen anticipos pero no aparecen en saldos_final (no tienen deuda)
@@ -132,75 +136,82 @@ def render():
 
     if not cliente_opciones:
         st.info("No hay clientes registrados. Por favor, agregue clientes en el módulo 'Clientes'.")
-        st.stop()
+        st.stop() # Detener la ejecución si no hay clientes
 
-    if "cobranza_cliente_select" not in st.session_state and cliente_opciones:
-        st.session_state.cobranza_cliente_select = cliente_opciones[0]
 
-    cliente_seleccionado_para_ui = st.session_state.cobranza_cliente_select
+    # Filtro para la tabla de saldos
+    filtro_cliente_saldos = st.selectbox(
+        "Filtrar saldos por cliente (opcional)",
+        ["Todos los clientes"] + cliente_opciones,
+        key="filtro_saldos_cliente_tabla"
+    )
 
-    # Mostrar la tabla de saldos general o filtrada
-    if cliente_seleccionado_para_ui and saldos_completos["Cliente"].isin([cliente_seleccionado_para_ui]).any():
-        saldos_filtrados_ui = saldos_completos[saldos_completos["Cliente"] == cliente_seleccionado_para_ui].copy()
+    saldos_display = saldos_completos.copy()
+    saldos_display["Saldo Pendiente Display"] = saldos_display.apply(
+        lambda row: 0.0 if row["Total Pagos y Aplicaciones"] >= row["Crédito Otorgado"] else row["Saldo Pendiente"],
+        axis=1
+    )
 
-        # Ajustar el "Saldo pendiente" a cero si el "Total Pagos y Aplicaciones" cubre o excede el "Crédito Otorgado"
-        saldos_filtrados_ui["Saldo Pendiente Display"] = saldos_filtrados_ui.apply(
-            lambda row: 0.0 if row["Total Pagos y Aplicaciones"] >= row["Crédito Otorgado"] else row["Saldo Pendiente"],
-            axis=1
-        )
+    if filtro_cliente_saldos != "Todos los clientes":
+        df_to_display_export_saldos = saldos_display[saldos_display["Cliente"] == filtro_cliente_saldos].copy()
+    else:
+        df_to_display_export_saldos = saldos_display.copy()
 
-        st.dataframe(
-            saldos_filtrados_ui[["Cliente", "Crédito Otorgado", "Total Pagos y Aplicaciones", "Saldo Pendiente Display",
-                                 "Saldo Anticipos"]].rename(columns={
-                "Crédito Otorgado": "Crédito Otorgado",
-                "Total Pagos y Aplicaciones": "Pagos y Aplicaciones",
-                "Saldo Pendiente Display": "Saldo Pendiente",
-                "Saldo Anticipos": "Anticipo a Favor"  # Nuevo nombre más claro
-            }),
-            use_container_width=True
+    df_to_display_export_saldos = df_to_display_export_saldos[[
+        "Cliente", "Crédito Otorgado", "Total Pagos y Aplicaciones", "Saldo Pendiente Display", "Saldo Anticipos"
+    ]].rename(columns={
+        "Crédito Otorgado": "Crédito Otorgado",
+        "Total Pagos y Aplicaciones": "Pagos y Aplicaciones",
+        "Saldo Pendiente Display": "Saldo Pendiente",
+        "Saldo Anticipos": "Anticipo a Favor"
+    })
+
+    st.dataframe(df_to_display_export_saldos, use_container_width=True)
+
+    if not df_to_display_export_saldos.empty:
+        file_name_suffix = ""
+        if filtro_cliente_saldos != "Todos los clientes":
+            file_name_suffix = f"_{filtro_cliente_saldos.replace(' ', '_')}"
+            label_text = f"Exportar Saldo de {filtro_cliente_saldos} a Excel"
+        else:
+            label_text = "Exportar todos los Saldos a Excel"
+
+        st.download_button(
+            label=label_text,
+            data=to_excel(df_to_display_export_saldos),
+            file_name=f"saldos_clientes{file_name_suffix}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        # Mostrar la tabla completa con el Saldo Pendiente ajustado
-        saldos_display = saldos_completos.copy()
-        saldos_display["Saldo Pendiente Display"] = saldos_display.apply(
-            lambda row: 0.0 if row["Total Pagos y Aplicaciones"] >= row["Crédito Otorgado"] else row["Saldo Pendiente"],
-            axis=1
-        )
-
-        st.dataframe(
-            saldos_display[["Cliente", "Crédito Otorgado", "Total Pagos y Aplicaciones", "Saldo Pendiente Display",
-                            "Saldo Anticipos"]].rename(columns={
-                "Crédito Otorgado": "Crédito Otorgado",
-                "Total Pagos y Aplicaciones": "Pagos y Aplicaciones",
-                "Saldo Pendiente Display": "Saldo Pendiente",
-                "Saldo Anticipos": "Anticipo a Favor"
-            }),
-            use_container_width=True
-        )
-        if cliente_opciones:
-            st.info("Selecciona un cliente para ver su saldo detallado, o ve la tabla completa arriba.")
-        else:
-            st.info("No hay saldos pendientes para mostrar.")
+        st.info("No hay saldos pendientes para mostrar según el filtro seleccionado.")
 
     st.divider()
     st.subheader("🧾 Registrar nuevo pago")
 
-    # --- Aquí se selecciona el cliente, el on_change es importante ---
+    # --- INICIALIZACIÓN ADECUADA DEL SELECTBOX DE CLIENTE PARA REGISTRAR PAGO ---
+    # Calculamos el índice por defecto de forma segura.
+    default_index_for_cobranza_select = 0 # Valor predeterminado si no se encuentra o no hay opciones
+    if "cobranza_cliente_select_form" in st.session_state and \
+       st.session_state.cobranza_cliente_select_form in cliente_opciones:
+        # Si la clave ya existe en session_state (porque el selectbox ya se renderizó antes)
+        # y el valor guardado está en las opciones actuales, usa su índice.
+        default_index_for_cobranza_select = cliente_opciones.index(st.session_state.cobranza_cliente_select_form)
+    # Si no hay clientes, el `st.stop()` de arriba ya detuvo la ejecución.
+    # Si hay clientes pero la clave no está en session_state, default_index_for_cobranza_select será 0 (primer cliente).
+
     cliente_seleccionado = st.selectbox(
         "Cliente",
         cliente_opciones,
-        index=cliente_opciones.index(
-            st.session_state.cobranza_cliente_select) if st.session_state.cobranza_cliente_select in cliente_opciones else 0,
-        key="cobranza_cliente_select_form",
-        on_change=on_cliente_change  # Aquí se llama a la función de callback
+        index=default_index_for_cobranza_select,
+        key="cobranza_cliente_select_form", # Esta key es crucial para Streamlit
+        on_change=on_cliente_change
     )
 
     # Recalcular saldo_cliente_actual de forma precisa (usando el cliente_seleccionado actual)
     saldo_cliente_actual_para_pago = 0.0
     anticipo_a_favor_actual = 0.0
 
-    if cliente_seleccionado and not saldos_completos.empty and cliente_seleccionado in saldos_completos[
-        "Cliente"].tolist():
+    if cliente_seleccionado and not saldos_completos.empty and cliente_seleccionado in saldos_completos["Cliente"].tolist():
         cliente_data = saldos_completos[saldos_completos["Cliente"] == cliente_seleccionado].iloc[0]
         # Usamos "Saldo Pendiente Display" porque ese ya es el valor ajustado a 0 si la deuda está cubierta
         saldo_cliente_actual_para_pago = cliente_data["Saldo Pendiente Display"]
@@ -210,23 +221,21 @@ def render():
     if monto_sugerido_input == 0 and anticipo_a_favor_actual > 0:
         st.info(f"El cliente {cliente_seleccionado} tiene un anticipo a favor de ${anticipo_a_favor_actual:,.2f}.")
 
-    # --- CAMBIO CLAVE AQUÍ (se movió la lógica del default_value) ---
     # Si la clave "cobranza_monto_input" no existe o fue eliminada por el on_change,
     # se inicializa con el monto sugerido.
     if "cobranza_monto_input" not in st.session_state:
         st.session_state["cobranza_monto_input"] = monto_sugerido_input
-    # --- FIN CAMBIO CLAVE ---
 
     monto = st.number_input(
         "Monto a abonar",
         min_value=0.0,
-        value=st.session_state["cobranza_monto_input"],  # Ahora siempre toma de session_state
+        value=st.session_state["cobranza_monto_input"],
         format="%.2f",
-        key="cobranza_monto_input"  # La clave del widget debe ser la misma que la de session_state
+        key="cobranza_monto_input"
     )
 
     metodo_pago = st.selectbox("Método de pago", ["Efectivo", "Transferencia", "Tarjeta"], key="cobranza_metodo_pago")
-    fecha = st.date_input("Fecha de pago", key="cobranza_fecha")
+    fecha = st.date_input("Fecha de pago", key="cobranza_fecha", value=datetime.date.today()) # Valor predeterminado a hoy
     descripcion = st.text_input("Referencia del pago (opcional)", key="cobranza_descripcion")
 
     if st.button("Procesar Pago", key="cobranza_procesar_pago_btn_main"):
@@ -265,7 +274,7 @@ def render():
             (current_transacciones_df["Cliente"] == cliente_seleccionado)
             ]["Monto"].sum()
 
-        total_pagos_aplicaciones_current = pagos_cobranza_current + anticipos_aplicados_current
+        total_pagos_aplicaciones_current = pagos_cobranza_current
         saldo_pendiente_current = credito_otorgado_current - total_pagos_aplicaciones_current
         saldo_anticipo_a_favor_current = anticipos_recibidos_current - anticipos_aplicados_current
 
@@ -399,15 +408,15 @@ def render():
                 st.info("Operación de pago cancelada por el usuario.")
 
             # Limpiar banderas y recargar para refrescar la UI
-            st.session_state["mostrar_opciones_excedente"] = False  # Cambiado de del a False
-            st.session_state["pago_excedente_info"] = {}  # Reiniciar a vacío
+            st.session_state["mostrar_opciones_excedente"] = False
+            st.session_state["pago_excedente_info"] = {}
             st.session_state.transacciones_data = leer_transacciones()
             st.session_state.ventas_data = leer_ventas()
             st.rerun()
         elif cancelar_opcion_excedente:
             st.info("Operación de pago cancelada por el usuario.")
-            st.session_state["mostrar_opciones_excedente"] = False  # Cambiado de del a False
-            st.session_state["pago_excedente_info"] = {}  # Reiniciar a vacío
+            st.session_state["mostrar_opciones_excedente"] = False
+            st.session_state["pago_excedente_info"] = {}
             st.rerun()
 
     # --- Bloque para mostrar opciones de anticipo (solo si se necesita) ---
@@ -444,29 +453,88 @@ def render():
                 st.info("Operación de pago cancelada por el usuario.")
 
             # Limpiar banderas y recargar
-            st.session_state["mostrar_opciones_anticipo"] = False  # Cambiado de del a False
-            st.session_state["pago_anticipo_info"] = {}  # Reiniciar a vacío
+            st.session_state["mostrar_opciones_anticipo"] = False
+            st.session_state["pago_anticipo_info"] = {}
             st.session_state.transacciones_data = leer_transacciones()
             st.session_state.ventas_data = leer_ventas()
             st.rerun()
         elif cancelar_opcion_anticipo:
             st.info("Operación de pago cancelada por el usuario.")
-            st.session_state["mostrar_opciones_anticipo"] = False  # Cambiado de del a False
-            st.session_state["pago_anticipo_info"] = {}  # Reiniciar a vacío
+            st.session_state["mostrar_opciones_anticipo"] = False
+            st.session_state["pago_anticipo_info"] = {}
             st.rerun()
 
     st.divider()
     st.subheader("📑 Historial de pagos y anticipos")
+
+    # --- Selectores de fecha para el historial ---
+    col_hist1, col_hist2 = st.columns(2)
+    with col_hist1:
+        # Asegúrate de que las fechas por defecto sean datetime.date.today()
+        # y que se maneje el caso de DataFrame vacío.
+        default_start_date_hist = datetime.date.today() # Valor por defecto a hoy
+        if not st.session_state.transacciones_data.empty and "Fecha" in st.session_state.transacciones_data.columns:
+            # Convertir a datetime antes de buscar min
+            # Crear una copia para evitar SettingWithCopyWarning
+            temp_df_for_dates = st.session_state.transacciones_data.copy()
+            temp_df_for_dates["Fecha_dt"] = pd.to_datetime(temp_df_for_dates["Fecha"], errors='coerce')
+            # Filtrar NaT antes de encontrar el mínimo, o establecer una fecha predeterminada
+            valid_dates = temp_df_for_dates["Fecha_dt"].dropna()
+            if not valid_dates.empty:
+                default_start_date_hist = valid_dates.min().date()
+
+        start_date_hist = st.date_input("Fecha de inicio (historial)", value=default_start_date_hist)
+
+    with col_hist2:
+        default_end_date_hist = datetime.date.today() # Valor por defecto a hoy
+        if not st.session_state.transacciones_data.empty and "Fecha" in st.session_state.transacciones_data.columns:
+            temp_df_for_dates = st.session_state.transacciones_data.copy()
+            temp_df_for_dates["Fecha_dt"] = pd.to_datetime(temp_df_for_dates["Fecha"], errors='coerce')
+            valid_dates = temp_df_for_dates["Fecha_dt"].dropna()
+            if not valid_dates.empty:
+                default_end_date_hist = valid_dates.max().date()
+
+        end_date_hist = st.date_input("Fecha de fin (historial)", value=default_end_date_hist)
+
+
     historial_transacciones = st.session_state.transacciones_data[
         st.session_state.transacciones_data["Categoría"].astype(str).isin(
             ["Cobranza", "Anticipo Cliente", "Anticipo Aplicado"])
-    ] if not st.session_state.transacciones_data.empty else pd.DataFrame()
+    ].copy() if not st.session_state.transacciones_data.empty else pd.DataFrame()
 
-    if not historial_transacciones.empty and all(col in historial_transacciones.columns for col in
-                                                 ["Fecha", "Cliente", "Descripción", "Monto", "Método de pago",
-                                                  "Categoría", "Tipo"]):
-        historial_transacciones = historial_transacciones[
-            ["Fecha", "Cliente", "Descripción", "Monto", "Método de pago", "Categoría", "Tipo"]]
-        st.dataframe(historial_transacciones.sort_values("Fecha", ascending=False), use_container_width=True)
+    if not historial_transacciones.empty:
+        # Asegurarse de que la columna 'Fecha' sea datetime para el filtrado
+        # Crear una copia para evitar SettingWithCopyWarning
+        historial_transacciones["Fecha_dt"] = pd.to_datetime(historial_transacciones["Fecha"], errors='coerce')
+
+        # Eliminar filas con fechas inválidas (NaT) antes de filtrar
+        historial_transacciones.dropna(subset=['Fecha_dt'], inplace=True)
+
+
+        # Aplicar filtro por fechas
+        if start_date_hist:
+            historial_transacciones = historial_transacciones[historial_transacciones["Fecha_dt"].dt.date >= start_date_hist]
+        if end_date_hist:
+            historial_transacciones = historial_transacciones[historial_transacciones["Fecha_dt"].dt.date <= end_date_hist]
+
+        if all(col in historial_transacciones.columns for col in
+               ["Fecha", "Cliente", "Descripción", "Monto", "Método de pago",
+                "Categoría", "Tipo"]):
+            df_historial_to_display_export = historial_transacciones[
+                ["Fecha", "Cliente", "Descripción", "Monto", "Método de pago", "Categoría", "Tipo"]
+            ].sort_values("Fecha", ascending=False)
+            st.dataframe(df_historial_to_display_export, use_container_width=True)
+
+            if not df_historial_to_display_export.empty:
+                st.download_button(
+                    label="Exportar historial a Excel",
+                    data=to_excel(df_historial_to_display_export),
+                    file_name="historial_pagos_anticipos.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("No hay pagos o anticipos en el rango de fechas seleccionado.")
+        else:
+            st.info("Columnas necesarias para el historial no encontradas. Asegúrese de que los datos sean correctos.")
     else:
         st.info("Aún no se han registrado pagos o anticipos.")

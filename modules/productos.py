@@ -13,6 +13,14 @@ from utils.db import (
 )
 
 
+# Helper function to convert DataFrame to Excel
+def to_excel(df):
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df.to_excel(writer, index=False, sheet_name='Productos') # 'Productos' es el nombre de la hoja en Excel
+    writer.close() # Importante cerrar el escritor para guardar el contenido
+    processed_data = output.getvalue()
+    return processed_data
 
 
 def render():
@@ -116,8 +124,30 @@ def render():
             st.session_state.productos["Nombre"].str.contains(filtro, case=False, na=False)
             ]
         st.dataframe(df_filtrado, use_container_width=True)
+
+        # Botón de descarga para el DataFrame filtrado
+        if not df_filtrado.empty:
+            st.download_button(
+                label="Descargar catálogo filtrado a Excel",
+                data=to_excel(df_filtrado),
+                file_name="catalogo_productos_filtrado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("No hay productos que coincidan con el filtro.")
     else:
         st.dataframe(st.session_state.productos, use_container_width=True)
+
+        # Botón de descarga para todo el catálogo
+        if not st.session_state.productos.empty:
+            st.download_button(
+                label="Descargar catálogo completo a Excel",
+                data=to_excel(st.session_state.productos),
+                file_name="catalogo_productos_completo.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("No hay productos registrados para exportar.")
 
     st.divider()
     st.subheader("➕ Dar entrada a productos existentes (Reabastecimiento)")

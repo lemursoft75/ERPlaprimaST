@@ -1,9 +1,19 @@
 import streamlit as st
+from io import BytesIO
 import pandas as pd
 import plotly.express as px
 from utils.db import guardar_venta, leer_ventas, leer_transacciones, guardar_transaccion, leer_clientes, leer_productos, \
     actualizar_producto_por_clave
 
+
+# Helper function to convert DataFrame to Excel
+def to_excel(df):
+    output = BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df.to_excel(writer, index=False, sheet_name='Ventas')
+    writer.close()
+    processed_data = output.getvalue()
+    return processed_data
 
 def render():
     st.title("💸 Ventas")
@@ -358,7 +368,35 @@ def render():
 
     st.divider()
     st.subheader("📋 Histórico de ventas")
-    st.dataframe(st.session_state.ventas, use_container_width=True)
+
+    # --- Date Range Selection for Export ---
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Fecha de inicio", value=pd.to_datetime(st.session_state.ventas["Fecha"]).min() if not st.session_state.ventas.empty else None)
+    with col2:
+        end_date = st.date_input("Fecha de fin", value=pd.to_datetime(st.session_state.ventas["Fecha"]).max() if not st.session_state.ventas.empty else None)
+
+    filtered_ventas_df = st.session_state.ventas.copy()
+
+    if not filtered_ventas_df.empty:
+        filtered_ventas_df["Fecha"] = pd.to_datetime(filtered_ventas_df["Fecha"])
+        if start_date:
+            filtered_ventas_df = filtered_ventas_df[filtered_ventas_df["Fecha"] >= pd.to_datetime(start_date)]
+        if end_date:
+            filtered_ventas_df = filtered_ventas_df[filtered_ventas_df["Fecha"] <= pd.to_datetime(end_date)]
+
+    st.dataframe(filtered_ventas_df, use_container_width=True)
+
+    if not filtered_ventas_df.empty:
+        st.download_button(
+            label="Descargar histórico de ventas a Excel",
+            data=to_excel(filtered_ventas_df),
+            file_name="historico_ventas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("No hay datos de ventas para el rango de fechas seleccionado o en general.")
+
 
     if not st.session_state.ventas.empty:
         st.subheader("📊 Ingresos diarios")
